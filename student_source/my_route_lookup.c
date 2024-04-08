@@ -224,30 +224,38 @@ void compressTrie(TrieNode* root){
     }
 }
 
-int findPort(TrieNode *root, uint32_t IPAddress) {
+int findPort(TrieNode *root, uint32_t IPAddress, int *tableAccesses) {
     TrieNode* temp = root;
     uint32_t bit;
     uint32_t shifted_addr;
     int return_port = temp->port;
+
     while (temp->left_ptr != NULL || temp->right_ptr != NULL) { //don't know if i need this outer one
         bit = 1U << (31-temp->bit_position);
-        printf("\nReg: ");
-        printBits(&IPAddress);
-        printf("Bit: ");
-        printBits(&bit);
-        printf("Bit Pos: %u\n", temp->bit_position);
+        // printf("\nAdr: ");
+        // printBits(&IPAddress);
+        // printf("Bit: ");
+        // printBits(&bit);
+        // printf("Bit Pos: %u\n", temp->bit_position);
         if (!(IPAddress & bit) && temp->left_ptr != NULL) { // If the address at the next bit position is 0 and there is another node, move left
             temp = temp->left_ptr;
-            printf("LEFT!\n");
+            *tableAccesses += 1;
+            // printf("LEFT!\n");
 
-            shifted_addr = (IPAddress >> (32 - temp->prefix_len)) << (32 - temp->prefix_len); // shift it right and then back left by 32-prefix_len to compare addr to prefix
-            printf("Prefix Length: %i\nShiAddy: ", temp->prefix_len);
-            printBits(&shifted_addr);
-            printf("Prefixx: ");
-            printBits(&temp->prefix);
-            printf("RegAddy: ");
-            printBits(&IPAddress);
-            printf("Port: %i\n", temp->port);
+            // shift it right and then back left by 32-prefix_len to compare addr to prefix
+            if (temp->prefix_len == 0) {
+                shifted_addr = 0;
+            } else {
+                shifted_addr = (IPAddress >> (32 - temp->prefix_len)) << (32 - temp->prefix_len);
+            }
+
+            // printf("Prefix Length: %i\nShiAddy: ", temp->prefix_len);
+            // printBits(&shifted_addr);
+            // printf("Prefixx: ");
+            // printBits(&temp->prefix);
+            // printf("RegAddy: ");
+            // printBits(&IPAddress);
+            // printf("Port: %i\n", temp->port);
 
             // updating return port if bitstring matches shifted address and has a port
             if (temp->port != 0 && temp->prefix == shifted_addr) {
@@ -255,16 +263,23 @@ int findPort(TrieNode *root, uint32_t IPAddress) {
             }
         } else if ((IPAddress & bit) && temp->right_ptr != NULL) { // If the address at the next bit position is 1 and there is another node, move right
             temp = temp->right_ptr;
-            printf("RIGHT!\n");
+            *tableAccesses += 1;
+            // printf("RIGHT!\n");
 
-            shifted_addr = (IPAddress >> (32 - temp->prefix_len)) << (32 - temp->prefix_len); // shift it right and then back left by 32-prefix_len to compare addr to prefix
-            printf("Prefix Length: %i\nShiAddy: ", temp->prefix_len);
-            printBits(&shifted_addr);
-            printf("Prefixx: ");
-            printBits(&temp->prefix);
-            printf("RegAddy: ");
-            printBits(&IPAddress);
-            printf("Port: %i\n", temp->port);
+            // shift it right and then back left by 32-prefix_len to compare addr to prefix
+            if (temp->prefix_len == 0) {
+                shifted_addr = 0;
+            } else {
+                shifted_addr = (IPAddress >> (32 - temp->prefix_len)) << (32 - temp->prefix_len);
+            }
+
+            // printf("Prefix Length: %i\nShiAddy: ", temp->prefix_len);
+            // printBits(&shifted_addr);
+            // printf("Prefixx: ");
+            // printBits(&temp->prefix);
+            // printf("RegAddy: ");
+            // printBits(&IPAddress);
+            // printf("Port: %i\n", temp->port);
 
             // updating return port if bitstring matches shifted address and has a port
             if (temp->port != 0 && temp->prefix == shifted_addr) {
@@ -288,30 +303,36 @@ void createTrie(TrieNode *root) {
         insert_trie(root, prefix, prefixLength, outInterface);
     }
     //print_trie(root);
-    print_trie(root); //PRINTING OUT THE TRIE
-    printf("------------------------------------------------\n");
+    // print_trie(root); //PRINTING OUT THE TRIE
     compressTrie(root);
 }
 
-void processAddresses(TrieNode *root) {
+void processAddresses(TrieNode *root, int *numPktsProcessed, int *totalTableAccesses, double *totalPacketProcessingTime) {
     uint32_t IPAddress;
     int port;
     struct timespec initialTime, finalTime;
     double searchingTime;
-    int tableAccesses = 0; //TODO: make this a thing
+    int tableAccesses = 0;
 
         while (readInputPacketFileLine(&IPAddress) == OK) {
             // printf("IP Address: %u\n", IPAddress);
             clock_gettime(CLOCK_MONOTONIC_RAW, &initialTime);
-            port = findPort(root, IPAddress);
+            port = findPort(root, IPAddress, &tableAccesses);
             clock_gettime(CLOCK_MONOTONIC_RAW, &finalTime);
             printOutputLine(IPAddress, port, &initialTime, &finalTime, &searchingTime, tableAccesses);
+            *numPktsProcessed += 1;
+            *totalTableAccesses += tableAccesses;
+            *totalPacketProcessingTime += searchingTime;
         }
 }
 
 
 
 int main(int argc, char *argv[]) {
+
+    int numPktsProcessed = 0;
+    int totalTableAccesses = 0;
+    double totalPacketProcessingTime = 0;
 
     int err = initializeIO(argv[1], argv[2]);
     if (err != OK) {
@@ -324,11 +345,19 @@ int main(int argc, char *argv[]) {
     print_trie(root); //PRINTING OUT THE TRIE
 
     int nodes = countNodes(root); //INFO ABOUT THE AMOUNT OF NODES
-    printf("countNodes: %d\n", nodes);
+    printf("------------------------------------------------\n");
+
     //int children = countChildren(root);
     //printf("countChildren root: %d\n", children);
 
-    processAddresses(root);
+    processAddresses(root, &numPktsProcessed, &totalTableAccesses, &totalPacketProcessingTime);
+    printf("\nNumber of nodes in the tree = %d", nodes);
+    printSummary(numPktsProcessed, totalTableAccesses/numPktsProcessed, totalPacketProcessingTime/numPktsProcessed);
+    // printf("Packets processed = %d\n", nodes);
+    // printf("Average node accesses = %d\n", nodes);
+    // printf("Average packet processing time (nsecs) = %d\n", nodes);
+    // printf("Memory (Kbytes) = %d\n", nodes);
+    // printf("CPU Time (secs) = %d\n", nodes);
 
     free_trienode(root); // FREE THE TRIE
 
