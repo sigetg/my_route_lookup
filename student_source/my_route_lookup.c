@@ -64,7 +64,7 @@ void print_node(TrieNode* node){
         printf("none");
     }
     else{
-        for (int i = 0; i < node->bit_position; i++){
+        for (int i = 0; i < node->prefix_len; i++){
             uint32_t mask = 1U  << (31-i); //that gives us a 00000000000001000000000 uint with 1 at the position of i
             printf("%d", (node->prefix & mask) ? 1 : 0); //PRINTS THE PREFIX
         }
@@ -182,6 +182,7 @@ void deleteAndUpdate(TrieNode* child, TrieNode* node, TrieNode* parent){
     if (node->port != 0){ //if node has a port assigned to it, we assign it to the child
         child->port = node->port;
         child->prefix = node->prefix;
+        child->prefix_len = node->prefix_len;
     }
 
     //linking parent of a node to the correct child
@@ -314,16 +315,16 @@ void processAddresses(TrieNode *root, int *numPktsProcessed, int *totalTableAcce
     double searchingTime;
     int tableAccesses = 0;
 
-        while (readInputPacketFileLine(&IPAddress) == OK) {
-            // printf("IP Address: %u\n", IPAddress);
-            clock_gettime(CLOCK_MONOTONIC_RAW, &initialTime);
-            port = findPort(root, IPAddress, &tableAccesses);
-            clock_gettime(CLOCK_MONOTONIC_RAW, &finalTime);
-            printOutputLine(IPAddress, port, &initialTime, &finalTime, &searchingTime, tableAccesses);
-            *numPktsProcessed += 1;
-            *totalTableAccesses += tableAccesses;
-            *totalPacketProcessingTime += searchingTime;
-        }
+    while (readInputPacketFileLine(&IPAddress) == OK) {
+        // printf("IP Address: %u\n", IPAddress);
+        clock_gettime(CLOCK_MONOTONIC_RAW, &initialTime);
+        port = findPort(root, IPAddress, &tableAccesses);
+        clock_gettime(CLOCK_MONOTONIC_RAW, &finalTime);
+        printOutputLine(IPAddress, port, &initialTime, &finalTime, &searchingTime, tableAccesses);
+        *numPktsProcessed += 1;
+        *totalTableAccesses += tableAccesses;
+        *totalPacketProcessingTime += searchingTime;
+    }
 }
 
 
