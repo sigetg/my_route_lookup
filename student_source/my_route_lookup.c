@@ -8,13 +8,12 @@ typedef struct TrieNode TrieNode;
 
 struct TrieNode {
     uint32_t prefix; //we store the whole prefix bcs its only 32 bits, so basically the same as 4 chars
+    int prefix_len;
     int bit_position; //starting from 0, not from 1 for quality of our life, care for that
     int port; // if a node doesn't have a port assigned it goes 0
     TrieNode* left_ptr;
     TrieNode* right_ptr;
 };
-
-static TrieNode* root; //idk if that's the way to go, i don't have access to memory data and stuff from the online compiler
 
 TrieNode* make_trienode(int bit_position) { //we need a different function for making nodes with port and without
     // Allocate memory for a TrieNode
@@ -23,6 +22,7 @@ TrieNode* make_trienode(int bit_position) { //we need a different function for m
     node->right_ptr = NULL;
     node->bit_position = bit_position;
     node->prefix = 0; // let's assume 0 at start, might be changed later
+    node->prefix_len = 0;
     node->port = 0; //port number is 0 as default
     //NOTE: WE ONLY CARE ABOUT PREFIXES OF NODES WITH PORTS ASSIGNED TO THEM
 
@@ -113,6 +113,7 @@ void insert_trie(TrieNode* root, uint32_t prefix, int prefix_len, int interface)
     }
     // end of loop
     temp->prefix = prefix; // we only care about prefixes in port nodes
+    temp->prefix_len = prefix_len; //Added this so I could detect weather a prefix matches a IPAddress (as a shift amount)
     temp->port = interface; // go girl!!
 
     printf("\n");
@@ -207,6 +208,39 @@ void compressTrie(TrieNode* root){
     }
 }
 
+int findPort(TrieNode *root, uint32_t IPAddress) {
+    TrieNode* temp = root;
+    uint32_t bit;
+    int return_port = temp->port;
+    while (temp->left_ptr != NULL || temp->right_ptr != NULL) { //don't know if i need this outer one
+        bit = 1U << (31-temp->bit_position);
+        printf("\nBit: %u, Bit Pos: %u\n", bit, temp->bit_position);
+        // printf("\nHola: %d\n", (IPAddress & bit) ? 1 : 0); //PRINTING OUT THE PROCESSED PREFIX
+        if (!(IPAddress & bit) && temp->left_ptr != NULL) { // If the address at the next bit position is 0 and there is another node, move left
+            temp = temp->left_ptr;
+            printf("LEFT!\n");
+
+            // updating return port if bitstring matches address and has a port
+            printf("Shifted Addy: %u, Just Addy: %u, Prefix: %u\n", (IPAddress >> (31 - temp->prefix_len)) << (31 - temp->prefix_len), IPAddress, temp->prefix); //PRINTING OUT THE PROCESSED PREFIX
+            if (temp->port != 0 && temp->prefix == (IPAddress >> (31 - temp->prefix_len)) << (31 - temp->prefix_len)) {
+                return_port = temp->port;
+            }
+        } else if ((IPAddress & bit) && temp->right_ptr != NULL) {
+            temp = temp->right_ptr;
+            printf("RIGHT!\n");
+
+            // updating return port if bitstring matches address and has a port
+            printf("Shifted Addy: %u, Just Addy:%u, Prefix: %u\n", (IPAddress >> (31 - temp->prefix_len)) << (31 - temp->prefix_len), IPAddress, temp->prefix); //PRINTING OUT THE PROCESSED PREFIX
+            if (temp->port != 0 && temp->prefix == (IPAddress >> (31 - temp->prefix_len)) << (31 - temp->prefix_len)) {
+                return_port = temp->port;
+            }
+        } else { //if the bit we are checking is 0
+            return return_port;
+        }
+    }
+    return return_port;
+}
+
 
 void createTrie(TrieNode *root) {
     //CREATES THE WHOOOOOOOOOOOOOOOOOOOLE TRIE AND COMPRESSES IT
@@ -214,7 +248,7 @@ void createTrie(TrieNode *root) {
     int prefixLength, outInterface;
 
     while (readFIBLine(&prefix, &prefixLength, &outInterface) == OK) {
-        //printf("FIB Entry: Prefix: %u, Prefix Length: %d, Out Interface: %d\n", prefix, prefixLength, outInterface);
+        // printf("FIB Entry: Prefix: %u, Prefix Length: %d, Out Interface: %d\n", prefix, prefixLength, outInterface);
         insert_trie(root, prefix, prefixLength, outInterface);
     }
     //print_trie(root);
@@ -222,15 +256,32 @@ void createTrie(TrieNode *root) {
     compressTrie(root);
 }
 
+void processAddresses(TrieNode *root) {
+    uint32_t IPAddress;
+    int port;
+    struct timespec initialTime, finalTime;
+    double searchingTime;
+    int tableAccesses = 0;
+
+        while (readInputPacketFileLine(&IPAddress) == OK) {
+            // printf("IP Address: %u\n", IPAddress);
+            clock_gettime(CLOCK_MONOTONIC_RAW, &initialTime);
+            port = findPort(root, IPAddress);
+            clock_gettime(CLOCK_MONOTONIC_RAW, &finalTime);
+            printOutputLine(IPAddress, port, &initialTime, &finalTime, &searchingTime, tableAccesses);
+        }
+}
+
+
 
 int main(int argc, char *argv[]) {
 
-    int err = initializeIO("routing_table_presentation.txt", "prueba0.txt");
+    int err = initializeIO(argv[1], argv[2]);
     if (err != OK) {
         printIOExplanationError(err);
         exit(0);
     }
-    root = make_trienode(0); // CREATING A ROOT NOODE
+    TrieNode* root = make_trienode(0); // CREATING A ROOT NODE
     createTrie(root); //CREATING THE TREE
 
     print_trie(root); //PRINTING OUT THE TRIE
@@ -239,6 +290,8 @@ int main(int argc, char *argv[]) {
     printf("countNodes: %d\n", nodes);
     //int children = countChildren(root);
     //printf("countChildren root: %d\n", children);
+
+    processAddresses(root);
 
     free_trienode(root); // FREE THE TRIE
 
